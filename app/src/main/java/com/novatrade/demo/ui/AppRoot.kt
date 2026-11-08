@@ -1,5 +1,12 @@
 package com.novatrade.demo.ui
 
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.windowInsetsBottomHeight
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.semantics.Role
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
@@ -202,26 +209,29 @@ fun AppRoot(
                     Column {
                         if (readyToast) ReadyToast()
                         HorizontalDivider(color = AppColors.Divider, thickness = 0.5.dp)
-                        NavigationBar(containerColor = AppColors.Surface, tonalElevation = 0.dp) {
-                            Tab.entries.forEach { t ->
-                                val selected = tab == t
-                                NavigationBarItem(
-                                    selected = selected,
-                                    onClick = { tab = t },
-                                    icon = {
-                                        if (t.icon != null) Icon(t.icon, contentDescription = t.label)
-                                        else NavGlyph(t, if (selected) AppColors.TextPrimary else AppColors.TextSecondary)
-                                    },
-                                    label = { Text(t.label, maxLines = 1, softWrap = false, fontSize = 10.sp, letterSpacing = (-0.2).sp) },
-                                    colors = NavigationBarItemDefaults.colors(
-                                        selectedIconColor = AppColors.TextPrimary,
-                                        selectedTextColor = AppColors.TextPrimary,
-                                        indicatorColor = Color.Transparent,
-                                        unselectedIconColor = AppColors.TextSecondary,
-                                        unselectedTextColor = AppColors.TextSecondary,
-                                    ),
-                                )
+                        // Broker-style tab bar: 56dp of content (icon centre 21dp, label centre 42dp from the top)
+                        // above the system navigation inset, instead of Material's 80dp bar.
+                        Column(Modifier.fillMaxWidth().background(AppColors.Surface)) {
+                            Row(Modifier.fillMaxWidth().height(56.dp)) {
+                                Tab.entries.forEach { t ->
+                                    val selected = tab == t
+                                    val tint = if (selected) AppColors.TextPrimary else AppColors.TextSecondary
+                                    Column(
+                                        Modifier
+                                            .weight(1f)
+                                            .fillMaxHeight()
+                                            .selectable(selected = selected, role = Role.Tab, interactionSource = null, indication = null) { tab = t }
+                                            .padding(top = 9.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                    ) {
+                                        if (t.icon != null) Icon(t.icon, contentDescription = null, tint = tint, modifier = Modifier.size(24.dp))
+                                        else NavGlyph(t, tint)
+                                        Spacer(Modifier.height(3.dp))
+                                        Text(t.label, color = tint, maxLines = 1, softWrap = false, fontSize = 11.sp, lineHeight = 13.sp, letterSpacing = (-0.1).sp)
+                                    }
+                                }
                             }
+                            Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
                         }
                     }
                 }

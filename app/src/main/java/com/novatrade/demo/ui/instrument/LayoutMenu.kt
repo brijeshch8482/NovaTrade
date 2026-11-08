@@ -57,6 +57,7 @@ private enum class LayoutDialog { COPY, RENAME, OPEN }
 @Composable
 fun LayoutMenuOverlay(layout: LayoutControls, onDismiss: () -> Unit, onResult: (OrderResult) -> Unit) {
     var dialog by remember { mutableStateOf<LayoutDialog?>(null) }
+    androidx.activity.compose.BackHandler(enabled = dialog == null, onBack = onDismiss)
 
     Box(Modifier.fillMaxSize()) {
         Box(

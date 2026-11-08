@@ -293,6 +293,8 @@ fun InstrumentScreen(
         dropDraft()
         panelIndex = null
     }
+    // Back while placing a drawing cancels the tool rather than leaving the chart.
+    androidx.activity.compose.BackHandler(enabled = tool != "cursor") { selectTool("cursor") }
     // The broker app shrinks the header while an order form or a position panel is open.
     val compact = side != null || panelIndex != null
 

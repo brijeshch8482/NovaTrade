@@ -276,6 +276,7 @@ fun ToolListOverlay(
     onToggleFavorite: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    androidx.activity.compose.BackHandler(onBack = onDismiss)
     Box(Modifier.fillMaxSize()) {
         Box(
             Modifier

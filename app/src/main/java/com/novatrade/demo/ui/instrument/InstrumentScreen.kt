@@ -343,12 +343,20 @@ fun InstrumentScreen(
                     ) {
                         InstrumentIcon(inst, size = 26)
                         Spacer(Modifier.width(8.dp))
-                        Text(inst.displayName, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                        Text(inst.displayName, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
                         Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Choose instrument")
                     }
                     Spacer(Modifier.weight(1f))
                     HeaderIcon(Icons.Outlined.AddAlarm, "Price alert") { sheet = Sheet.ALERT }
-                    HeaderIcon(Icons.Outlined.Fullscreen, "Full screen") { fullscreen = true }
+                    Box(
+                        Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .clickable { fullscreen = true },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        ExpandGlyph(AppColors.TextPrimary, Modifier.size(21.dp))
+                    }
                     HeaderIcon(Icons.Outlined.Settings, "Chart settings") { chartMenu = ChartMenu.SCALE }
                     HeaderIcon(Icons.Filled.MoreVert, "Account menu") { sheet = Sheet.MENU }
                 }
@@ -871,12 +879,33 @@ private fun CountBadge(count: Int) {
     Box(
         Modifier
             .padding(start = 8.dp)
-            .size(20.dp)
+            .size(18.dp)
             .clip(CircleShape)
-            .background(AppColors.SurfaceHigh),
+            .background(Color(0xFF151920)),
         contentAlignment = Alignment.Center,
     ) {
-        Text(count.toString(), fontSize = 11.sp)
+        Text(count.toString(), fontSize = 11.sp, lineHeight = 11.sp)
+    }
+}
+
+/** Full screen mark: four arrows pointing out to the corners. */
+@Composable
+private fun ExpandGlyph(color: Color, modifier: Modifier = Modifier) {
+    androidx.compose.foundation.Canvas(modifier) {
+        val u = size.width / 24f
+        val w = 2f * u
+        fun line(x1: Float, y1: Float, x2: Float, y2: Float) = drawLine(
+            color, androidx.compose.ui.geometry.Offset(x1 * u, y1 * u), androidx.compose.ui.geometry.Offset(x2 * u, y2 * u),
+            strokeWidth = w, cap = androidx.compose.ui.graphics.StrokeCap.Round,
+        )
+        // Each corner: a diagonal shaft from near the centre and an L-shaped head in the corner.
+        listOf(1f to 1f, -1f to 1f, 1f to -1f, -1f to -1f).forEach { (dx, dy) ->
+            val cx = 12f + dx * 8.5f
+            val cy = 12f + dy * 8.5f
+            line(12f + dx * 2.5f, 12f + dy * 2.5f, cx, cy)
+            line(cx, cy, cx - dx * 5.5f, cy)
+            line(cx, cy, cx, cy - dy * 5.5f)
+        }
     }
 }
 
@@ -911,7 +940,6 @@ private fun Toolbar(
             Text(
                 timeframe.label,
                 fontSize = 15.sp,
-                fontWeight = FontWeight.SemiBold,
                 color = iconTint,
                 modifier = Modifier
                     .clip(RoundedCornerShape(6.dp))

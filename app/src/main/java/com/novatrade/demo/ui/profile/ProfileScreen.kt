@@ -257,7 +257,8 @@ private fun infoText(which: Info, accounts: List<Account>): Pair<String, String>
         "Market data: Binance, Yahoo Finance, Forex Factory and FXStreet. Charts: TradingView Lightweight Charts™ (Apache License 2.0)."
     Info.UPDATE -> "Update the app" to "You're using the latest version of ${Brand.name} (1.0)."
     Info.ABOUT -> "About the app" to "${Brand.name} 1.0\n\nAccounts on this device: ${accounts.size} (${accounts.count { it.type == AccountType.REAL }} real, ${accounts.count { it.type == AccountType.DEMO }} demo)\n\n" +
-        "Balance across accounts: ${usd(accounts.sumOf { it.balance })}"
+        "Balance across accounts: ${usd(accounts.sumOf { it.balance })}\n\n" +
+        "Charts by TradingView Lightweight Charts™ (tradingview.com), licensed under Apache 2.0."
     else -> "" to ""
 }
 

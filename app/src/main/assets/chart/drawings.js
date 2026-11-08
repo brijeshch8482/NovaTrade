@@ -748,6 +748,46 @@
         price_range: { n: 2, draw: (P, d) => measure(P, d, true, false) },
         date_range: { n: 2, draw: (P, d) => measure(P, d, false, true) },
         date_price_range: { n: 2, draw: (P, d) => measure(P, d, true, true) },
+        bars_pattern: { n: 2, draw: (P, d) => barsPattern(P, d) },
+        ghost_feed: { n: -1, draw: (P, d) => ghostFeed(P, d) },
+        projection: { n: 3, draw: (P, d) => projection(P, d) },
+        anchored_vwap: { n: 1, draw: (P, d) => anchoredVwap(P, d) },
+        fixed_range_volume_profile: { n: 2, draw: (P, d) => volumeProfile(P, d) },
+
+        // Pitchfan and Gann
+        pitchfan: {
+            n: 3,
+            draw: (P, d) => {
+                if (P.length < 3) return S(poly(P));
+                S(seg(P[1], P[2]));
+                [0, 0.25, 0.382, 0.5, 0.618, 0.75, 1].forEach((l, i) => {
+                    const t = { x: P[1].x + (P[2].x - P[1].x) * l, y: P[1].y + (P[2].y - P[1].y) * l };
+                    ctx.strokeStyle = l === 0.5 ? d.color : FIB[i % FIB.length][1];
+                    S(seg(P[0], ext(P[0], t, false, true).b));
+                });
+                ctx.strokeStyle = d.color;
+            },
+        },
+        gann_box: { n: 2, draw: (P, d) => gannBox(P[0], P[1], d) },
+        gann_square_fixed: {
+            n: 1,
+            draw: (P, d) => gannSquare(P[0], { x: P[0].x + 120, y: P[0].y - 120 }, d),
+        },
+        gann_square: { n: 2, draw: (P, d) => gannSquare(P[0], P[1], d) },
+        gann_fan: {
+            n: 2,
+            draw: (P, d) => {
+                const O = P[0], w = P[1].x - O.x, h = P[1].y - O.y;
+                [[8, '1/8'], [4, '1/4'], [3, '1/3'], [2, '1/2'], [1, '1/1'], [1 / 2, '2/1'], [1 / 3, '3/1'], [1 / 4, '4/1'], [1 / 8, '8/1']].forEach(([k, label], i) => {
+                    const t = { x: O.x + w, y: O.y + h * k };
+                    ctx.strokeStyle = k === 1 ? d.color : FIB[i % FIB.length][1];
+                    const e = ext(O, t, false, true).b;
+                    S(seg(O, e));
+                    text(label, t.x + 4, t.y, { base: 'middle', color: ctx.strokeStyle, size: 10 });
+                });
+                ctx.strokeStyle = d.color;
+            },
+        },
 
         // Text and notes (text comes from a dialog after placing)
         text: { n: 1, text: true, draw: (P, d) => text(d.text || 'Text', P[0].x, P[0].y, { color: d.color, size: 14, base: 'middle' }) },
@@ -823,6 +863,188 @@
         },
         emoji: { n: 1, text: true, draw: (P, d) => text(d.text || '🙂', P[0].x, P[0].y, { align: 'center', base: 'middle', size: 26 }) },
     };
+
+    // ---- projection, volume and Gann helpers ---------------------------------------------------
+
+    const xOfTime = (t) => chart.timeScale().logicalToCoordinate(timeToLogical(t));
+    const yOf = (p) => series.priceToCoordinate(p);
+    const barGap = () => Math.max(2, chart.timeScale().options().barSpacing || 6);
+
+    /** Bars between the two anchors, oldest first. */
+    function barsBetween(d) {
+        const t0 = Math.min(d.points[0].time, d.points[1].time), t1 = Math.max(d.points[0].time, d.points[1].time);
+        return bars.filter((b) => b.time >= t0 && b.time <= t1);
+    }
+
+    function ohlcBar(x, o, h, l, c, color) {
+        const yo = yOf(o), yh = yOf(h), yl = yOf(l), yc = yOf(c);
+        if ([yo, yh, yl, yc].some((v) => v == null)) return;
+        ctx.strokeStyle = color;
+        const half = Math.max(1.5, barGap() * 0.35);
+        S(seg({ x: x, y: yh }, { x: x, y: yl }));
+        S(seg({ x: x - half, y: yo }, { x: x, y: yo }));
+        S(seg({ x: x, y: yc }, { x: x + half, y: yc }));
+    }
+
+    /** Copies the bars between the anchors and replays them from the second anchor onwards. */
+    function barsPattern(P, d) {
+        if (P.length < 2) return S(poly(P));
+        const src = barsBetween(d);
+        const r = new Path2D();
+        r.rect(Math.min(P[0].x, P[1].x), 0, Math.abs(P[1].x - P[0].x), pane().h);
+        F(r, rgba(d.color, 0.06));
+        if (!src.length) return;
+        const off = priceAt(d, 1) - src[0].open, gap = barGap();
+        src.forEach((b, i) => ohlcBar(Math.max(P[0].x, P[1].x) + (i + 1) * gap, b.open + off, b.high + off, b.low + off, b.close + off, rgba(d.color, 0.7)));
+        ctx.strokeStyle = d.color;
+    }
+
+    /** Ghost candles walking from anchor to anchor. */
+    function ghostFeed(P, d) {
+        if (P.length < 2) return;
+        const gap = barGap();
+        for (let k = 1; k < P.length; k++) {
+            const a = P[k - 1], b = P[k], n = Math.max(1, Math.round(Math.abs(b.x - a.x) / gap));
+            const pa = series.coordinateToPrice(a.y), pb = series.coordinateToPrice(b.y);
+            if (pa == null || pb == null) continue;
+            const wick = Math.abs(pb - pa) / n * 0.6 || pa * 0.0005;
+            for (let i = 0; i < n; i++) {
+                const o = pa + (pb - pa) * (i / n), c = pa + (pb - pa) * ((i + 1) / n);
+                const x = a.x + (b.x - a.x) * ((i + 0.5) / n);
+                const up = c >= o, half = Math.max(1.5, gap * 0.35);
+                const y0 = yOf(Math.max(o, c)), y1 = yOf(Math.min(o, c));
+                ctx.strokeStyle = rgba(up ? '#2962FF' : '#F23645', 0.55);
+                S(seg({ x: x, y: yOf(Math.max(o, c) + wick) }, { x: x, y: yOf(Math.min(o, c) - wick) }));
+                const body = new Path2D();
+                body.rect(x - half, y0, half * 2, Math.max(1, y1 - y0));
+                F(body, rgba(up ? '#2962FF' : '#F23645', 0.35));
+            }
+        }
+        ctx.strokeStyle = d.color;
+        dashed(() => S(poly(P)));
+    }
+
+    /** Two legs from the first anchor with the arc between them and the size of the second leg against the first. */
+    function projection(P, d) {
+        if (P.length < 3) return S(poly(P));
+        const O = P[0], r = Math.hypot(P[1].x - O.x, P[1].y - O.y);
+        const a1 = Math.atan2(P[1].y - O.y, P[1].x - O.x), a2 = Math.atan2(P[2].y - O.y, P[2].x - O.x);
+        const wedge = new Path2D();
+        wedge.moveTo(O.x, O.y);
+        wedge.arc(O.x, O.y, r, a1, a2, a2 < a1);
+        wedge.closePath();
+        F(wedge, rgba(d.color, 0.12));
+        S(seg(O, P[1]));
+        S(seg(O, P[2]));
+        const arcPath = new Path2D();
+        arcPath.arc(O.x, O.y, r, a1, a2, a2 < a1);
+        S(arcPath);
+        const first = priceAt(d, 1) - priceAt(d, 0), second = priceAt(d, 2) - priceAt(d, 0);
+        if (first) text((second / first * 100).toFixed(1) + '%', P[2].x + 6, P[2].y, { base: 'middle', bg: d.color, size: 11 });
+    }
+
+    /** Volume-weighted average price of every bar from the anchor to the latest one. */
+    function anchoredVwap(P, d) {
+        const t0 = d.points[0].time;
+        let pv = 0, vol = 0;
+        const pts = [];
+        bars.forEach((b) => {
+            if (b.time < t0) return;
+            const v = b.volume > 0 ? b.volume : Math.max(b.high - b.low, 1e-9);
+            pv += ((b.high + b.low + b.close) / 3) * v;
+            vol += v;
+            const x = xOfTime(b.time), y = yOf(pv / vol);
+            if (x != null && y != null) pts.push({ x: x, y: y });
+        });
+        if (pts.length < 2) return S(hline(P[0].y, P[0].x, P[0].x + 40));
+        S(poly(pts));
+        const end = pts[pts.length - 1];
+        text('VWAP ' + fmt(pv / vol), end.x + 6, end.y, { base: 'middle', bg: d.color, size: 11 });
+    }
+
+    /** Volume at each price between the anchors as horizontal bars, with the busiest row marked. */
+    function volumeProfile(P, d) {
+        if (P.length < 2) return S(poly(P));
+        const src = barsBetween(d);
+        const xL = Math.min(P[0].x, P[1].x), xR = Math.max(P[0].x, P[1].x);
+        const frame = new Path2D();
+        frame.rect(xL, 0, xR - xL, pane().h);
+        F(frame, rgba(d.color, 0.05));
+        if (!src.length) return;
+        const lo = Math.min(...src.map((b) => b.low)), hi = Math.max(...src.map((b) => b.high));
+        const rows = 24, step = (hi - lo) / rows || 1;
+        const up = new Array(rows).fill(0), down = new Array(rows).fill(0);
+        src.forEach((b) => {
+            const v = b.volume > 0 ? b.volume : Math.max(b.high - b.low, 1e-9);
+            const r0 = Math.max(0, Math.floor((b.low - lo) / step)), r1 = Math.min(rows - 1, Math.floor((b.high - lo) / step));
+            for (let r = r0; r <= r1; r++) (b.close >= b.open ? up : down)[r] += v / (r1 - r0 + 1);
+        });
+        const max = Math.max(...up.map((v, i) => v + down[i])) || 1;
+        const width = (xR - xL) * 0.7;
+        let poc = 0;
+        for (let r = 0; r < rows; r++) {
+            if (up[r] + down[r] > up[poc] + down[poc]) poc = r;
+            const yTop = yOf(lo + (r + 1) * step), yBot = yOf(lo + r * step);
+            if (yTop == null || yBot == null) continue;
+            const h = Math.max(1, yBot - yTop - 1);
+            const wu = width * up[r] / max, wd = width * down[r] / max;
+            const a = new Path2D();
+            a.rect(xL, yTop, wu, h);
+            F(a, rgba('#2962FF', 0.45));
+            const b = new Path2D();
+            b.rect(xL + wu, yTop, wd, h);
+            F(b, rgba('#FB8C00', 0.45));
+        }
+        const yp = yOf(lo + (poc + 0.5) * step);
+        if (yp != null) {
+            ctx.strokeStyle = '#F23645';
+            S(hline(yp, xL, xR));
+            ctx.strokeStyle = d.color;
+        }
+    }
+
+    const GANN = [0, 0.25, 0.382, 0.5, 0.618, 0.75, 1];
+
+    /** Box with Gann levels across both price and time. */
+    function gannBox(A, B, d) {
+        if (!B) return;
+        const x0 = Math.min(A.x, B.x), x1 = Math.max(A.x, B.x), y0 = Math.min(A.y, B.y), y1 = Math.max(A.y, B.y);
+        const box = new Path2D();
+        box.rect(x0, y0, x1 - x0, y1 - y0);
+        F(box, rgba(d.color, 0.06));
+        GANN.forEach((l, i) => {
+            ctx.strokeStyle = FIB[i % FIB.length][1];
+            const x = x0 + (x1 - x0) * l, y = y0 + (y1 - y0) * l;
+            S(seg({ x: x, y: y0 }, { x: x, y: y1 }));
+            S(seg({ x: x0, y: y }, { x: x1, y: y }));
+            text(String(l), x, y1 + 4, { align: 'center', color: ctx.strokeStyle, size: 9 });
+        });
+        ctx.strokeStyle = d.color;
+        S(box);
+    }
+
+    /** Square split into quarters, with diagonals and fan lines from each corner. */
+    function gannSquare(A, B, d) {
+        if (!B) return;
+        const x0 = Math.min(A.x, B.x), x1 = Math.max(A.x, B.x), y0 = Math.min(A.y, B.y), y1 = Math.max(A.y, B.y);
+        const xm = (x0 + x1) / 2, ym = (y0 + y1) / 2;
+        const box = new Path2D();
+        box.rect(x0, y0, x1 - x0, y1 - y0);
+        F(box, rgba(d.color, 0.06));
+        S(box);
+        [0.25, 0.5, 0.75].forEach((l) => {
+            S(seg({ x: x0 + (x1 - x0) * l, y: y0 }, { x: x0 + (x1 - x0) * l, y: y1 }));
+            S(seg({ x: x0, y: y0 + (y1 - y0) * l }, { x: x1, y: y0 + (y1 - y0) * l }));
+        });
+        ctx.strokeStyle = rgba(d.color, 0.7);
+        S(seg({ x: x0, y: y1 }, { x: x1, y: y0 }));
+        S(seg({ x: x0, y: y0 }, { x: x1, y: y1 }));
+        [[x0, y1], [x1, y0], [x0, y0], [x1, y1]].forEach(([cx, cy]) => {
+            S(seg({ x: cx, y: cy }, { x: xm, y: cy === y1 ? y0 : y1 }));
+            S(seg({ x: cx, y: cy }, { x: cx === x0 ? x1 : x0, y: ym }));
+        });
+        ctx.strokeStyle = d.color;
+    }
 
     function position(P, d, long) {
         if (P.length < 2) return;

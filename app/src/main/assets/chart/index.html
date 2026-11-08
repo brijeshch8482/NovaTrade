@@ -568,7 +568,10 @@
     // Settings button in the corner between the price and time scales, like the broker chart.
     const corner = document.createElement('div');
     corner.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24"><path d="M7 3.5h10l5 8.5-5 8.5H7L2 12z" fill="none" stroke="#D4DAE0" stroke-width="1.7" stroke-linejoin="round"/><circle cx="12" cy="12" r="3" fill="none" stroke="#D4DAE0" stroke-width="1.7"/></svg>';
-    Object.assign(corner.style, { position: 'fixed', bottom: '0', zIndex: '6', display: 'flex', alignItems: 'center', justifyContent: 'center' });
+    Object.assign(corner.style, {
+        position: 'fixed', bottom: '0', zIndex: '6', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        boxSizing: 'border-box', borderTop: '1px solid #3A444D',
+    });
     document.body.appendChild(corner);
     corner.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -577,9 +580,12 @@
 
     function placeCorner() {
         const w = scaleWidth(side());
+        // Both scale borders run on through the corner, closing it off like the broker chart.
         Object.assign(corner.style, {
             width: w + 'px', height: chart.timeScale().height() + 'px',
             left: (scaleOpts.left ? 0 : window.innerWidth - w) + 'px',
+            borderLeft: scaleOpts.left ? 'none' : '1px solid #3A444D',
+            borderRight: scaleOpts.left ? '1px solid #3A444D' : 'none',
         });
     }
     setInterval(placeCorner, 250);

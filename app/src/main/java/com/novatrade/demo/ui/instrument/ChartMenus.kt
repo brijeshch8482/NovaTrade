@@ -1,5 +1,6 @@
 package com.novatrade.demo.ui.instrument
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -94,6 +95,7 @@ private val ListTop = 101.dp
 /** Dim layer over the toolbar and chart; tapping it closes the menu. */
 @Composable
 private fun Scrim(onDismiss: () -> Unit) {
+    BackHandler(onBack = onDismiss)
     Box(
         Modifier
             .fillMaxSize()
@@ -255,6 +257,7 @@ fun CustomIntervalPanel(prefs: ChartMenuPrefs, onDismiss: () -> Unit, onAdded: (
         else -> null
     }
     val canAdd = candidate != null && error == null
+    BackHandler(onBack = onDismiss)
     val add = {
         if (canAdd) {
             prefs.addCustom(candidate!!)
@@ -449,6 +452,8 @@ fun ScaleSettingsMenu(
     var page by remember { mutableStateOf(ScalePage.MAIN) }
     Box(Modifier.fillMaxSize()) {
         Scrim(onDismiss)
+        // Registered after the scrim's handler, so it wins while a sub-page is open.
+        BackHandler(enabled = page != ScalePage.MAIN) { page = ScalePage.MAIN }
         Column(
             Modifier
                 .fillMaxSize()

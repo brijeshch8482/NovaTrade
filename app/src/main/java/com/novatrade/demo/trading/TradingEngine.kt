@@ -59,7 +59,7 @@ class TradingEngine(
     private val market: MarketRepository,
     private val store: AccountStore,
 ) {
-    private val _book = MutableStateFlow(store.load()?.withBothTypes() ?: defaultBook())
+    private val _book = MutableStateFlow(store.load()?.repaired() ?: defaultBook())
 
     val accounts: StateFlow<List<Account>> = _book.map { it.accounts }
         .stateIn(scope, SharingStarted.Eagerly, _book.value.accounts)
@@ -127,7 +127,7 @@ class TradingEngine(
         return OrderResult.Success("Transferred ${usd(amount)} to #$to").also(::logResult)
     }
 
-    /** Deletes every account and starts over with one empty real and one demo account. */
+    /** Deletes every account and starts over with a single demo account. */
     fun terminate() {
         _book.value = defaultBook()
         _notifications.value = emptyList()
@@ -493,19 +493,19 @@ class TradingEngine(
         )
 
         /** Files from older versions had a single demo account; give them a Real one too. */
-        private fun AccountBook.withBothTypes(): AccountBook {
-            val missing = AccountType.entries.filter { t -> accounts.none { it.type == t } }
-            val fixed = copy(accounts = accounts + missing.map { newAccount(it, if (it == AccountType.DEMO) DEFAULT_BALANCE else 0.0, DEFAULT_LEVERAGE) })
+        /** Loaded book made usable: never empty, and nothing left on removed instruments. Real accounts are only ever opened by the user. */
+        private fun AccountBook.repaired(): AccountBook {
+            val fixed = if (accounts.isEmpty()) defaultBook() else this
             // Drop positions on instruments that no longer exist.
             return fixed.copy(accounts = fixed.accounts.map { a ->
                 a.copy(nextId = if (a.nextId < 10_000_000) Random.nextLong(40_000_000, 49_000_000) else a.nextId, positions = a.positions.filter { Instruments.find(it.symbol) != null }, pending = a.pending.filter { Instruments.find(it.symbol) != null })
             })
         }
 
+        /** A fresh install has only a demo account; a real one has to be opened from Accounts. */
         private fun defaultBook(): AccountBook {
-            val real = newAccount(AccountType.REAL, 0.0, DEFAULT_LEVERAGE)
             val demo = newAccount(AccountType.DEMO, DEFAULT_BALANCE, DEFAULT_LEVERAGE)
-            return AccountBook(listOf(real, demo), demo.number)
+            return AccountBook(listOf(demo), demo.number)
         }
 
     }

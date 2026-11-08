@@ -64,8 +64,8 @@
      * price labels go on that scale, both relative to the plot.
      */
     function pane() {
-        const rw = chart.priceScale('right').width();
-        const lw = chart.priceScale('left').width();
+        const rw = scaleWidth('right');
+        const lw = scaleWidth('left');
         const tsh = chart.timeScale().height();
         const w = Math.max(0, window.innerWidth - rw - lw);
         return { w: w, h: Math.max(0, window.innerHeight - tsh), psw: rw || lw, tsh: tsh, x0: lw, ax: lw ? 2 - lw : w + 4 };

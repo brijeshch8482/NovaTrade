@@ -390,6 +390,7 @@
         else bars.push(bar);
         if (REBUILT.includes(chartType)) series.setData(seriesData());
         else series.update(mapBar(bar, bars[bars.length - 2]));
+        if (ownLastLabel()) refreshMarks();
         if (extras.length) {
             extras[0].update({ time: bar.time, value: bar.high });
             extras[1].update({ time: bar.time, value: bar.low });
@@ -452,6 +453,13 @@
         });
     }
 
+    /** A scale that was just shown has no layout until the next frame, and asking its width throws. */
+    function scaleWidth(id) {
+        try { return chart.priceScale(id).width(); } catch (e) { return 0; }
+    }
+
+    const ownLastLabel = () => chartType === 'hollow' || chartType === 'pnf';
+
     function applyScaleOptions() {
         if (!series) return;
         chart.applyOptions({
@@ -460,7 +468,9 @@
         });
         ['left', 'right'].forEach((id) => chart.priceScale(id).applyOptions({ invertScale: scaleOpts.invert, alignLabels: hasLabel('nooverlap') }));
         [series, ...extras].forEach((x) => x.applyOptions({ priceScaleId: side() }));
-        series.applyOptions({ lastValueVisible: hasLabel('last'), priceLineVisible: hasLine('last'), title: hasLabel('name') ? symbolName : '' });
+        // Hollow bodies are transparent and the chart would colour the last price label after them; draw our own.
+        const own = ownLastLabel();
+        series.applyOptions({ lastValueVisible: hasLabel('last') && !own, priceLineVisible: hasLine('last') && !own, title: hasLabel('name') ? symbolName : '' });
         Object.keys(indicatorSeries).forEach(indicatorOptions);
         applyScaleMode();
         refreshMarks();
@@ -488,13 +498,18 @@
         }
         add('bid', 'bidask', marks.bid, DOWN);
         add('ask', 'bidask', marks.ask, UP);
+        if (ownLastLabel() && bars.length) {
+            const lb = bars[bars.length - 1];
+            add('last', 'last', lb.close, lb.close >= lb.open ? UP : DOWN);
+            if (want.last) want.last.dotted = true;
+        }
         Object.keys(markLines).forEach((k) => {
             if (!want[k]) { series.removePriceLine(markLines[k]); delete markLines[k]; }
         });
         Object.keys(want).forEach((k) => {
             const w = want[k];
             const options = {
-                price: w.price, color: w.color, lineWidth: 1, lineStyle: LWC.LineStyle.Dashed,
+                price: w.price, color: w.color, lineWidth: 1, lineStyle: w.dotted ? LWC.LineStyle.Dotted : LWC.LineStyle.Dashed,
                 lineVisible: w.line, axisLabelVisible: w.label, title: '',
             };
             if (markLines[k]) markLines[k].applyOptions(options);
@@ -518,7 +533,7 @@
         const pad = (n) => String(n).padStart(2, '0');
         const d = Math.floor(left / 86400), h = Math.floor((left % 86400) / 3600), m = Math.floor((left % 3600) / 60), sec = left % 60;
         countdown.textContent = d ? d + 'd ' + h + 'h' : h ? pad(h) + ':' + pad(m) + ':' + pad(sec) : pad(m) + ':' + pad(sec);
-        const w = chart.priceScale(side()).width();
+        const w = scaleWidth(side());
         const up = chartType === 'line' || chartType === 'area' || last.close >= last.open;
         Object.assign(countdown.style, {
             display: 'block', width: w + 'px', top: (y + 9) + 'px',
@@ -537,7 +552,7 @@
     document.body.appendChild(plus);
     chart.subscribeCrosshairMove((param) => {
         if (!scaleOpts.plus || !param.point || !series) { plus.style.display = 'none'; return; }
-        const w = chart.priceScale(side()).width();
+        const w = scaleWidth(side());
         plus.dataset.price = series.coordinateToPrice(param.point.y);
         Object.assign(plus.style, {
             display: 'block', top: (param.point.y - 10) + 'px',
@@ -550,10 +565,29 @@
         if (window.Android && isFinite(price)) Android.onPlusTap(price);
     });
 
+    // Settings button in the corner between the price and time scales, like the broker chart.
+    const corner = document.createElement('div');
+    corner.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24"><path d="M7 3.5h10l5 8.5-5 8.5H7L2 12z" fill="none" stroke="#D4DAE0" stroke-width="1.7" stroke-linejoin="round"/><circle cx="12" cy="12" r="3" fill="none" stroke="#D4DAE0" stroke-width="1.7"/></svg>';
+    Object.assign(corner.style, { position: 'fixed', bottom: '0', zIndex: '6', display: 'flex', alignItems: 'center', justifyContent: 'center' });
+    document.body.appendChild(corner);
+    corner.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (window.Android) Android.onScaleTap();
+    });
+
+    function placeCorner() {
+        const w = scaleWidth(side());
+        Object.assign(corner.style, {
+            width: w + 'px', height: chart.timeScale().height() + 'px',
+            left: (scaleOpts.left ? 0 : window.innerWidth - w) + 'px',
+        });
+    }
+    setInterval(placeCorner, 250);
+
     // A tap on the price scale opens the scale menu.
     document.addEventListener('click', (e) => {
-        if (!window.Android || e.target === plus) return;
-        const w = chart.priceScale(side()).width();
+        if (!window.Android || e.target === plus || corner.contains(e.target)) return;
+        const w = scaleWidth(side());
         const onScale = scaleOpts.left ? e.clientX < w : e.clientX > window.innerWidth - w;
         if (onScale && e.clientY < window.innerHeight - chart.timeScale().height()) Android.onScaleTap();
     });

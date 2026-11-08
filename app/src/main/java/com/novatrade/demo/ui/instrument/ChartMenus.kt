@@ -31,7 +31,6 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -41,6 +40,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -61,6 +61,16 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.input.ImeAction
+import kotlin.math.roundToInt
 import com.novatrade.demo.data.ChartMenuPrefs
 import com.novatrade.demo.model.TfUnit
 import com.novatrade.demo.model.Timeframe
@@ -245,10 +255,23 @@ fun CustomIntervalPanel(prefs: ChartMenuPrefs, onDismiss: () -> Unit, onAdded: (
         else -> null
     }
     val canAdd = candidate != null && error == null
+    val add = {
+        if (canAdd) {
+            prefs.addCustom(candidate!!)
+            onAdded()
+        }
+    }
 
+    // The panel ends above the order buttons, so lift it only by the part of the keyboard that reaches it.
+    val density = LocalDensity.current
+    val rootHeight = LocalView.current.rootView.height
+    val imeBottom = WindowInsets.ime.getBottom(density)
+    var belowPanel by remember { mutableIntStateOf(0) }
     Column(
         Modifier
             .fillMaxSize()
+            .onGloballyPositioned { belowPanel = rootHeight - it.boundsInWindow().bottom.roundToInt() }
+            .padding(bottom = with(density) { (imeBottom - belowPanel).coerceAtLeast(0).toDp() })
             .background(DialogBg)
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {},
     ) {
@@ -288,7 +311,8 @@ fun CustomIntervalPanel(prefs: ChartMenuPrefs, onDismiss: () -> Unit, onAdded: (
                         value = text,
                         onValueChange = { v -> text = v.filter(Char::isDigit).take(4) },
                         singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { add() }),
                         textStyle = TextStyle(color = AppColors.TextPrimary, fontSize = 15.sp),
                         cursorBrush = androidx.compose.ui.graphics.SolidColor(AppColors.TextPrimary),
                         modifier = Modifier
@@ -330,10 +354,7 @@ fun CustomIntervalPanel(prefs: ChartMenuPrefs, onDismiss: () -> Unit, onAdded: (
                 Modifier
                     .size(width = 52.dp, height = 33.dp)
                     .background(if (canAdd) Color.White else Color(0xFF3C3C3C), RoundedCornerShape(6.dp))
-                    .clickable(enabled = canAdd) {
-                        prefs.addCustom(candidate!!)
-                        onAdded()
-                    },
+                    .clickable(enabled = canAdd, onClick = add),
                 contentAlignment = Alignment.Center,
             ) { Text("Add", fontSize = 15.sp, color = if (canAdd) Color.Black else Color(0xFF6E6E6E)) }
         }
@@ -433,7 +454,8 @@ fun ScaleSettingsMenu(
                 .fillMaxSize()
                 .padding(top = ListTop)
                 .background(AppColors.SheetBg)
-                .verticalScroll(rememberScrollState()),
+                // Each page starts at its top.
+                .verticalScroll(key(page) { rememberScrollState() }),
         ) {
             when (page) {
                 ScalePage.MAIN -> {
@@ -465,7 +487,7 @@ fun ScaleSettingsMenu(
                     MenuRow("Lines", arrow = true) { page = ScalePage.LINES }
                     MenuRow("Plus button", checked = settings.plusButton) { onChange(settings.copy(plusButton = !settings.plusButton)) }
                     GroupDivider()
-                    MenuRow("More settings…", lead = { Icon(Icons.Outlined.Settings, contentDescription = null, modifier = Modifier.size(22.dp)) }) {
+                    MenuRow("More settings…", lead = { SettingsHexagon(AppColors.TextPrimary, Modifier.size(22.dp)) }) {
                         onDismiss()
                         onMoreSettings()
                     }
@@ -490,6 +512,21 @@ fun ScaleSettingsMenu(
             }
             Spacer(Modifier.height(12.dp))
         }
+    }
+}
+
+/** The chart's settings mark: a hexagon with a ring inside. */
+@Composable
+fun SettingsHexagon(color: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier) {
+        val u = size.width / 24f
+        val hex = Path().apply {
+            moveTo(7f * u, 3.5f * u); lineTo(17f * u, 3.5f * u); lineTo(22f * u, 12f * u)
+            lineTo(17f * u, 20.5f * u); lineTo(7f * u, 20.5f * u); lineTo(2f * u, 12f * u); close()
+        }
+        val stroke = Stroke(width = 1.7f * u, join = androidx.compose.ui.graphics.StrokeJoin.Round)
+        drawPath(hex, color, style = stroke)
+        drawCircle(color, 3f * u, Offset(12f * u, 12f * u), style = stroke)
     }
 }
 

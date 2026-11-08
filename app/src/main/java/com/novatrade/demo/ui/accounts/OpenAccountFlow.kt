@@ -220,9 +220,9 @@ fun OpenAccountFlow(
                         Spacer(Modifier.width(6.dp))
                         AccountChip(platform, type)
                     }
-                    SetupRow("Currency", value = "USD") { sheet = "currency" }
-                    SetupRow("Max leverage", value = "1:$leverage") { sheet = "leverage" }
-                    SetupRow("Nickname", sub = "Optional", value = nickname.ifBlank { null }) { step = Step.NICKNAME }
+                    SetupRow("Currency", value = "USD", onClick = { sheet = "currency" })
+                    SetupRow("Max leverage", value = "1:$leverage", onClick = { sheet = "leverage" })
+                    SetupRow("Nickname", sub = "Optional", value = nickname.ifBlank { null }, onClick = { step = Step.NICKNAME })
                 }
                 YellowButton(if (creating) null else "Create account") { creating = true }
             }
@@ -328,6 +328,7 @@ private fun PlatformRow(name: String, text: String, recommended: Boolean = false
 }
 
 @Composable
+// Pass onClick by name: a trailing lambda here would land in [trailing] and run while composing.
 private fun SetupRow(label: String, sub: String? = null, value: String? = null, onClick: (() -> Unit)? = null, trailing: (@Composable () -> Unit)? = null) {
     Column {
         Row(

@@ -102,7 +102,7 @@ import com.novatrade.demo.util.percent
 import com.novatrade.demo.util.signedMoney
 import com.novatrade.demo.util.usd
 
-private enum class Sheet { DEPOSIT, PAYMENT, WITHDRAW, PAYMENT_WITHDRAW, DETAILS, SWITCH, CREATE, NOTIFICATIONS }
+private enum class Sheet { DEPOSIT, PAYMENT, WITHDRAW, PAYMENT_WITHDRAW, SWITCH, CREATE, NOTIFICATIONS }
 
 @Composable
 fun AccountsScreen(
@@ -119,6 +119,7 @@ fun AccountsScreen(
     onDemoDeposit: () -> Unit,
     onOpenAccount: () -> Unit,
     onAlerts: () -> Unit,
+    onDetails: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
@@ -154,7 +155,7 @@ fun AccountsScreen(
                 Text("Accounts", fontSize = 30.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                 CircleIconButton(Icons.Filled.Add, "Open new account", size = 40, iconSize = 17, onClick = onOpenAccount)
             }
-            AccountCard(account, metrics, onTrade, onSwitch = { sheet = Sheet.SWITCH }) { action ->
+            AccountCard(account, metrics, onTrade, onSwitch = { sheet = Sheet.SWITCH }, onDetails = onDetails) { action ->
                 // Real accounts go through the payment-method flow; demo accounts top up directly.
                 if (action == Sheet.DEPOSIT && account.type == AccountType.DEMO) {
                     onDemoDeposit()
@@ -246,7 +247,6 @@ fun AccountsScreen(
             },
             onDismiss = { sheet = null },
         )
-        Sheet.DETAILS -> DetailsSheet(account, metrics) { sheet = null }
         Sheet.SWITCH -> AccountSwitcherSheet(
             accounts = accounts,
             activeNumber = account.number,
@@ -281,6 +281,7 @@ private fun AccountCard(
     metrics: AccountMetrics,
     onTrade: () -> Unit,
     onSwitch: () -> Unit,
+    onDetails: () -> Unit,
     onAction: (Sheet) -> Unit,
 ) {
     Column(
@@ -316,7 +317,7 @@ private fun AccountCard(
             ActionButton("Trade", Icons.Outlined.CandlestickChart, primary = true, onClick = onTrade)
             ActionButton("Deposit", com.novatrade.demo.ui.common.DepositCircle) { onAction(Sheet.DEPOSIT) }
             ActionButton("Withdraw", com.novatrade.demo.ui.common.WithdrawCircle) { onAction(Sheet.WITHDRAW) }
-            ActionButton("Details", Icons.Filled.MoreVert) { onAction(Sheet.DETAILS) }
+            ActionButton("Details", Icons.Filled.MoreVert, onClick = onDetails)
         }
     }
 }
@@ -695,7 +696,7 @@ private fun EmptyState(title: String, onExplore: (() -> Unit)?, onOpenInstrument
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AmountSheet(title: String, subtitle: String, onDismiss: () -> Unit, onConfirm: (Double) -> Unit) {
+internal fun AmountSheet(title: String, subtitle: String, onDismiss: () -> Unit, onConfirm: (Double) -> Unit) {
     var amountText by remember { mutableStateOf("1000") }
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = AppColors.Surface) {
         Column(
@@ -725,33 +726,6 @@ private fun AmountSheet(title: String, subtitle: String, onDismiss: () -> Unit, 
                 shape = RoundedCornerShape(10.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = AppColors.Accent, contentColor = AppColors.OnAccent),
             ) { Text("$title ${amountText.toPriceOrNull()?.let(::usd) ?: ""}", fontWeight = FontWeight.Bold) }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun DetailsSheet(account: Account, metrics: AccountMetrics, onDismiss: () -> Unit) {
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = AppColors.Surface) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .navigationBarsPadding()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Text("Account details", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-            Spacer(Modifier.height(6.dp))
-            InfoRow("Account", "${account.type.label} · ${account.kind} #${account.number}")
-            InfoRow("Balance", usd(metrics.balance))
-            InfoRow("Equity", usd(metrics.equity))
-            InfoRow("Floating P/L", signedMoney(metrics.floatingProfit), AppColors.pnl(metrics.floatingProfit))
-            InfoRow("Margin", usd(metrics.margin))
-            InfoRow("Free margin", usd(metrics.freeMargin))
-            InfoRow("Margin level", metrics.marginLevel?.let(::percent) ?: "—")
-            InfoRow("Leverage", "1:${account.leverage}")
-            InfoRow("Stop out level", percent(TradingEngine.STOP_OUT_LEVEL))
-            Spacer(Modifier.height(12.dp))
         }
     }
 }

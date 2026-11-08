@@ -15,6 +15,8 @@ import com.novatrade.demo.model.PendingOrder
 import com.novatrade.demo.model.Position
 import com.novatrade.demo.model.Quote
 import com.novatrade.demo.model.Side
+import com.novatrade.demo.model.TransactionKind
+import com.novatrade.demo.model.Transaction
 import com.novatrade.demo.util.format
 import com.novatrade.demo.util.lots as formatLots
 import com.novatrade.demo.util.percent
@@ -122,8 +124,19 @@ class TradingEngine(
         if (amount <= 0) return OrderResult.Error("Enter an amount")
         val free = metricsFor(accountOf(from), market.quotes.value).freeMargin
         if (amount > free) return OrderResult.Error("You can transfer up to ${usd(free.coerceAtLeast(0.0))}")
-        edit(from) { it.copy(balance = it.balance - amount, totalDeposits = it.totalDeposits - amount) }
-        edit(to) { it.copy(balance = it.balance + amount, totalDeposits = it.totalDeposits + amount) }
+        val now = System.currentTimeMillis()
+        edit(from) {
+            it.copy(
+                balance = it.balance - amount, totalDeposits = it.totalDeposits - amount,
+                transactions = listOf(Transaction(now, TransactionKind.TRANSFER_OUT, amount, to)) + it.transactions,
+            )
+        }
+        edit(to) {
+            it.copy(
+                balance = it.balance + amount, totalDeposits = it.totalDeposits + amount,
+                transactions = listOf(Transaction(now, TransactionKind.TRANSFER_IN, amount, from)) + it.transactions,
+            )
+        }
         return OrderResult.Success("Transferred ${usd(amount)} to #$to").also(::logResult)
     }
 
@@ -289,14 +302,24 @@ class TradingEngine(
     fun setLeverage(leverage: Int) = edit(activeNumber) { it.copy(leverage = leverage) }
 
     fun deposit(amount: Double, number: Long = activeNumber) {
-        edit(number) { it.copy(balance = it.balance + amount, totalDeposits = it.totalDeposits + amount) }
+        edit(number) {
+            it.copy(
+                balance = it.balance + amount, totalDeposits = it.totalDeposits + amount,
+                transactions = listOf(Transaction(System.currentTimeMillis(), TransactionKind.DEPOSIT, amount)) + it.transactions,
+            )
+        }
         log("Deposit ${usd(amount)} to #$number")
     }
 
     fun withdraw(amount: Double, number: Long = activeNumber): OrderResult {
         val free = metricsFor(accountOf(number), market.quotes.value).freeMargin
         if (amount > free) return OrderResult.Error("You can withdraw up to ${usd(free.coerceAtLeast(0.0))}")
-        edit(number) { it.copy(balance = it.balance - amount, totalDeposits = it.totalDeposits - amount) }
+        edit(number) {
+            it.copy(
+                balance = it.balance - amount, totalDeposits = it.totalDeposits - amount,
+                transactions = listOf(Transaction(System.currentTimeMillis(), TransactionKind.WITHDRAWAL, amount)) + it.transactions,
+            )
+        }
         return OrderResult.Success("Withdrew ${usd(amount)} (virtual)").also(::logResult)
     }
 

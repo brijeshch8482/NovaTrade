@@ -8,6 +8,8 @@ import com.novatrade.demo.model.OrderType
 import com.novatrade.demo.model.PendingOrder
 import com.novatrade.demo.model.Position
 import com.novatrade.demo.model.Side
+import com.novatrade.demo.model.TransactionKind
+import com.novatrade.demo.model.Transaction
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -48,6 +50,9 @@ class AccountStore(private val file: File) {
         .put("nickname", nickname)
         .put("platform", platform)
         .put("archived", archived)
+        .put("transactions", JSONArray(transactions.map {
+            JSONObject().put("time", it.time).put("kind", it.kind.name).put("amount", it.amount).put("other", it.otherAccount)
+        }))
         .put("balance", balance)
         .put("leverage", leverage)
         .put("nextId", nextId)
@@ -63,6 +68,12 @@ class AccountStore(private val file: File) {
         nickname = optString("nickname", ""),
         platform = optString("platform", com.novatrade.demo.Brand.name),
         archived = optBoolean("archived"),
+        transactions = optJSONArray("transactions")?.let { arr ->
+            List(arr.length()) { i ->
+                val t = arr.getJSONObject(i)
+                Transaction(t.getLong("time"), TransactionKind.valueOf(t.getString("kind")), t.getDouble("amount"), if (t.isNull("other")) null else t.getLong("other"))
+            }
+        }.orEmpty(),
         balance = getDouble("balance"),
         leverage = getInt("leverage"),
         positions = getJSONArray("positions").map { it.toPosition() },

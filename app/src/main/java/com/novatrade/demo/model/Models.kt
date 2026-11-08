@@ -254,6 +254,13 @@ data class ClosedTrade(
     val takeProfit: Double? = null,
 )
 
+enum class TransactionKind(val label: String) {
+    DEPOSIT("Deposit"), WITHDRAWAL("Withdrawal"), TRANSFER_IN("Transfer in"), TRANSFER_OUT("Transfer out"),
+}
+
+/** A movement of (virtual) money in or out of an account; [otherAccount] is the transfer's other side. */
+data class Transaction(val time: Long, val kind: TransactionKind, val amount: Double, val otherAccount: Long? = null)
+
 /** Both kinds use virtual money; the type is only a label, like on a real broker app. */
 enum class AccountType(val label: String) { REAL("Real"), DEMO("Demo") }
 
@@ -273,6 +280,8 @@ data class Account(
     val platform: String = Brand.name,
     /** Hidden from the account lists until restored; its history is kept. */
     val archived: Boolean = false,
+    /** Deposits, withdrawals and transfers, newest first. */
+    val transactions: List<Transaction> = emptyList(),
 ) {
     /** Header shown on account cards, e.g. "RAJU" or "STANDARD". */
     val title: String get() = nickname.ifBlank { kind }.uppercase()

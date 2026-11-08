@@ -71,6 +71,16 @@ import kotlinx.coroutines.delay
 /** Account products offered when opening an account. */
 private data class Product(val name: String, val tagline: String, val minDeposit: String, val spread: String, val leverage: String, val commission: String, val tint: Color)
 
+/** Minimum spread of an account kind, as shown on its details page, e.g. "0.2". */
+internal fun minSpreadOf(kind: String): String =
+    PRODUCTS.firstOrNull { it.name.equals(kind, ignoreCase = true) }?.spread?.removeSuffix(" pips") ?: "0.2"
+
+/** Largest commission per side of an account kind, e.g. "0.00 USD" or "3.50 USD". */
+internal fun commissionOf(kind: String): String {
+    val text = PRODUCTS.firstOrNull { it.name.equals(kind, ignoreCase = true) }?.commission ?: return "0.00 USD"
+    return Regex("""(\d+\.\d+) USD""").find(text)?.let { it.groupValues[1] + " USD" } ?: "0.00 USD"
+}
+
 private val PRODUCTS = listOf(
     Product("Standard", "Smaller lots, lower risk. Great for practicing.", "10 USD", "0.2 pips", "1:Unlimited", "No commission", Color(0xFF7B5CC4)),
     Product("Standard Cent", "Trade in cents to test strategies with tiny volumes.", "10 USD", "0.3 pips", "1:Unlimited", "No commission", Color(0xFF3F8CC6)),

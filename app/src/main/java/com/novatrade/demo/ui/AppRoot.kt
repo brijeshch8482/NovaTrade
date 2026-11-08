@@ -56,6 +56,7 @@ import com.novatrade.demo.model.Timeframe
 import com.novatrade.demo.trading.OrderResult
 import com.novatrade.demo.trading.TradingEngine
 import com.novatrade.demo.ui.accounts.AccountSwitcherSheet
+import com.novatrade.demo.ui.accounts.AccountDetailsPage
 import com.novatrade.demo.ui.accounts.AccountsScreen
 import com.novatrade.demo.ui.accounts.OpenAccountFlow
 import com.novatrade.demo.ui.common.LocalHideBalances
@@ -89,7 +90,7 @@ private enum class Tab(val label: String, val icon: ImageVector?) {
 }
 
 /** Full-screen pages that cover the tabs. */
-private enum class Page { SETTINGS, OPEN_ACCOUNT, DEMO_DEPOSIT, ALERTS }
+private enum class Page { SETTINGS, OPEN_ACCOUNT, DEMO_DEPOSIT, ALERTS, ACCOUNT_DETAILS }
 
 @Composable
 fun AppRoot(
@@ -124,6 +125,8 @@ fun AppRoot(
     var depositStart by rememberSaveable { mutableStateOf<DepositStart?>(null) }
     var paymentMode by rememberSaveable { mutableStateOf(PaymentMode.DEPOSIT) }
     var page by rememberSaveable { mutableStateOf<Page?>(null) }
+    // Page to go back to when a page opened from another page closes.
+    var returnPage by rememberSaveable { mutableStateOf<Page?>(null) }
     var showSwitcher by remember { mutableStateOf(false) }
     var readyToast by remember { mutableStateOf(false) }
     val layoutState by chartPrefs.state.collectAsStateWithLifecycle()
@@ -225,35 +228,6 @@ fun AppRoot(
             },
         ) { padding ->
             val modifier = Modifier.padding(padding)
-            when (page) {
-                Page.SETTINGS -> {
-                    SettingsScreen(profile, engine, show, onClose = { page = null }, modifier = modifier)
-                    return@Scaffold
-                }
-                Page.OPEN_ACCOUNT -> {
-                    OpenAccountFlow(
-                        onCreate = { type, kind, platform, leverage, nickname ->
-                            engine.createAccount(type, leverage, kind, nickname, platform)
-                            page = null
-                            openSymbol = null
-                            tab = Tab.ACCOUNTS
-                            readyToast = true
-                        },
-                        onClose = { page = null },
-                        modifier = modifier,
-                    )
-                    return@Scaffold
-                }
-                Page.DEMO_DEPOSIT -> {
-                    DemoDepositScreen(onDeposit = { engine.deposit(it) }, onClose = { page = null }, modifier = modifier)
-                    return@Scaffold
-                }
-                Page.ALERTS -> {
-                    AlertsScreen(alerts, quotes, onClose = { page = null }, modifier = modifier)
-                    return@Scaffold
-                }
-                null -> Unit
-            }
             depositStart?.let { start ->
                 DepositFlow(
                     start = start,
@@ -277,6 +251,60 @@ fun AppRoot(
                     modifier = modifier,
                 )
                 return@Scaffold
+            }
+            when (page) {
+                Page.SETTINGS -> {
+                    SettingsScreen(profile, engine, show, onClose = { page = null }, modifier = modifier)
+                    return@Scaffold
+                }
+                Page.OPEN_ACCOUNT -> {
+                    OpenAccountFlow(
+                        onCreate = { type, kind, platform, leverage, nickname ->
+                            engine.createAccount(type, leverage, kind, nickname, platform)
+                            page = null
+                            openSymbol = null
+                            tab = Tab.ACCOUNTS
+                            readyToast = true
+                        },
+                        onClose = { page = null },
+                        modifier = modifier,
+                    )
+                    return@Scaffold
+                }
+                Page.DEMO_DEPOSIT -> {
+                    DemoDepositScreen(onDeposit = { engine.deposit(it) }, onClose = {
+                        page = returnPage
+                        returnPage = null
+                    }, modifier = modifier)
+                    return@Scaffold
+                }
+                Page.ACCOUNT_DETAILS -> {
+                    AccountDetailsPage(
+                        account = account,
+                        metrics = metrics,
+                        accounts = accounts,
+                        notifications = notifications,
+                        engine = engine,
+                        onResult = onResult,
+                        onOpenDeposit = { start, mode ->
+                            paymentMode = mode
+                            depositStart = start
+                        },
+                        onDemoDeposit = {
+                            returnPage = Page.ACCOUNT_DETAILS
+                            page = Page.DEMO_DEPOSIT
+                        },
+                        onOpenAccount = { page = Page.OPEN_ACCOUNT },
+                        onClose = { page = null },
+                        modifier = modifier,
+                    )
+                    return@Scaffold
+                }
+                Page.ALERTS -> {
+                    AlertsScreen(alerts, quotes, onClose = { page = null }, modifier = modifier)
+                    return@Scaffold
+                }
+                null -> Unit
             }
             val symbol = openSymbol
             if (symbol != null) {
@@ -333,6 +361,7 @@ fun AppRoot(
                     onDemoDeposit = { page = Page.DEMO_DEPOSIT },
                     onOpenAccount = { page = Page.OPEN_ACCOUNT },
                     onAlerts = { page = Page.ALERTS },
+                    onDetails = { page = Page.ACCOUNT_DETAILS },
                     modifier = modifier,
                 )
                 Tab.TRADE -> TradeListScreen(

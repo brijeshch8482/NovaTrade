@@ -1,0 +1,16 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- NovaTrade mark: a bold lowercase "n" with a four-point star at its top right -->
+    <path
+        android:pathData="M39,73V52a11,11 0 0 1 22,0V73"
+        android:strokeWidth="9"
+        android:strokeColor="#07080B"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:fillColor="#07080B"
+        android:pathData="M72,28Q73.6,35.4 81,37Q73.6,38.6 72,46Q70.4,38.6 63,37Q70.4,35.4 72,28z" />
+</vector>

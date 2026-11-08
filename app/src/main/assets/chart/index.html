@@ -1,0 +1,595 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <style>
+        html, body { margin: 0; height: 100%; background: #121A21; overflow: hidden; font-family: sans-serif; }
+        #chart { position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; }
+        #legend {
+            position: fixed; left: 10px; top: 6px; z-index: 5; pointer-events: none;
+            color: #167CE3; font-size: 13px;
+        }
+    </style>
+    <script src="lightweight-charts.standalone.production.js"></script>
+</head>
+<body>
+<div id="chart"></div>
+<div id="legend"></div>
+<script>
+    window.onerror = (m, src, line) => console.log('ERR ' + m + ' ' + src + ':' + line);
+    const LWC = LightweightCharts;
+    const UP = '#167CE3';
+    const DOWN = '#D44149';
+    const legend = document.getElementById('legend');
+
+    const chart = LWC.createChart(document.getElementById('chart'), {
+        width: window.innerWidth,
+        height: window.innerHeight,
+        layout: {
+            background: { type: 'solid', color: '#121A21' },
+            textColor: '#D4DAE0',
+            fontSize: 12,
+        },
+        grid: {
+            vertLines: { color: '#1A222B' },
+            horzLines: { color: '#1A222B' },
+        },
+        rightPriceScale: { borderColor: '#3A444D', scaleMargins: { top: 0.08, bottom: 0.08 } },
+        timeScale: {
+            borderColor: '#3A444D',
+            timeVisible: true,
+            secondsVisible: false,
+            rightOffset: 12,
+            barSpacing: 7,
+        },
+        crosshair: {
+            mode: LWC.CrosshairMode.Normal,
+            vertLine: { color: '#6B7480', labelBackgroundColor: '#2A323A' },
+            horzLine: { color: '#6B7480', labelBackgroundColor: '#2A323A' },
+        },
+    });
+    window.addEventListener('resize', () => chart.resize(window.innerWidth, window.innerHeight));
+
+    let bars = [];
+    let precision = 2;
+    let chartType = 'candles';
+    let series = null;
+    let lineDefs = [];
+    let priceLines = [];
+    let indicatorIds = [];
+    const indicatorSeries = {};
+
+    const INDICATORS = {
+        ma20: { period: 20, ema: false, color: '#F5A623' },
+        ma50: { period: 50, ema: false, color: '#B36BFF' },
+        ema20: { period: 20, ema: true, color: '#26C6DA' },
+    };
+
+    function priceFormat() {
+        return { type: 'price', precision: precision, minMove: Math.pow(10, -precision) };
+    }
+
+    // Chart styles whose points are rebuilt from all bars (bricks, columns, smoothed candles).
+    const REBUILT = ['heikinashi', 'renko', 'linebreak', 'kagi', 'pnf', 'baseline', 'volcandles'];
+    let extras = [];
+
+    const fade = (hex, a) => {
+        const n = parseInt(hex.slice(1), 16);
+        return 'rgba(' + (n >> 16) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')';
+    };
+
+    /** Typical candle range of the last 14 bars: the box size for Renko, Kagi and Point & figure. */
+    function boxSize(src) {
+        const n = Math.min(14, src.length);
+        let sum = 0;
+        for (let i = src.length - n; i < src.length; i++) sum += src[i].high - src[i].low;
+        return sum / n || src[src.length - 1].close * 0.001;
+    }
+
+    /** Several bricks can form in one bar; give each its own, strictly later, time. */
+    function stamp(out, time) {
+        const last = out.length ? out[out.length - 1].time : -Infinity;
+        return time > last ? time : last + 1;
+    }
+
+    function heikinAshi(src) {
+        const out = [];
+        let po = null, pc = null;
+        src.forEach((b) => {
+            const c = (b.open + b.high + b.low + b.close) / 4;
+            const o = po == null ? (b.open + b.close) / 2 : (po + pc) / 2;
+            out.push({ time: b.time, open: o, high: Math.max(b.high, o, c), low: Math.min(b.low, o, c), close: c });
+            po = o;
+            pc = c;
+        });
+        return out;
+    }
+
+    function renko(src) {
+        const box = boxSize(src), out = [];
+        let base = src[0].close;
+        src.forEach((b) => {
+            while (b.close >= base + box) { out.push({ time: stamp(out, b.time), open: base, high: base + box, low: base, close: base + box }); base += box; }
+            while (b.close <= base - box) { out.push({ time: stamp(out, b.time), open: base, high: base, low: base - box, close: base - box }); base -= box; }
+        });
+        return out;
+    }
+
+    /** Three-line break: a reversal needs a close beyond the last three lines. */
+    function lineBreak(src) {
+        const lines = [];
+        const start = src[0].close;
+        src.forEach((b) => {
+            const c = b.close;
+            if (!lines.length) { if (c !== start) lines.push({ open: start, close: c, time: b.time }); return; }
+            const last = lines[lines.length - 1], up = last.close > last.open;
+            const recent = lines.slice(-3);
+            const hi = Math.max(...recent.map((l) => Math.max(l.open, l.close)));
+            const lo = Math.min(...recent.map((l) => Math.min(l.open, l.close)));
+            if (up ? c > last.close : c < last.close) lines.push({ open: last.close, close: c, time: b.time });
+            else if (up ? c < lo : c > hi) lines.push({ open: last.open, close: c, time: b.time });
+        });
+        const out = [];
+        lines.forEach((l) => out.push({ time: stamp(out, l.time), open: l.open, close: l.close, high: Math.max(l.open, l.close), low: Math.min(l.open, l.close) }));
+        return out;
+    }
+
+    function kagi(src) {
+        const rev = boxSize(src) * 2, out = [{ time: src[0].time, value: src[0].close }];
+        let dir = 0, ext = src[0].close;
+        src.forEach((b) => {
+            const c = b.close;
+            const extend = (dir >= 0 && c > ext) || (dir <= 0 && c < ext);
+            const turn = (dir > 0 && c <= ext - rev) || (dir < 0 && c >= ext + rev);
+            if (!extend && !turn) return;
+            if (turn || dir === 0) dir = c > ext ? 1 : -1;
+            ext = c;
+            out.push({ time: stamp(out, b.time), value: c });
+        });
+        return out;
+    }
+
+    /** Point & figure columns (box from recent ranges, 3-box reversal), drawn as hollow candles. */
+    function pointFigure(src) {
+        const box = boxSize(src), rev = 3 * box, cols = [];
+        let col = { up: true, top: src[0].close, bottom: src[0].close, time: src[0].time };
+        src.forEach((b) => {
+            const c = b.close;
+            if (col.up) {
+                if (c >= col.top + box) col.top += Math.floor((c - col.top) / box) * box;
+                else if (c <= col.top - rev) {
+                    cols.push(col);
+                    col = { up: false, top: col.top - box, bottom: col.top - Math.floor((col.top - c) / box) * box, time: b.time };
+                }
+            } else if (c <= col.bottom - box) col.bottom -= Math.floor((col.bottom - c) / box) * box;
+            else if (c >= col.bottom + rev) {
+                cols.push(col);
+                col = { up: true, bottom: col.bottom + box, top: col.bottom + Math.floor((c - col.bottom) / box) * box, time: b.time };
+            }
+        });
+        cols.push(col);
+        const out = [];
+        cols.forEach((k) => out.push({
+            time: stamp(out, k.time), open: k.up ? k.bottom : k.top, close: k.up ? k.top : k.bottom, high: k.top, low: k.bottom,
+            color: 'rgba(0,0,0,0)', borderColor: k.up ? UP : DOWN,
+        }));
+        return out;
+    }
+
+    /** One bar in the current style; [prev] is the bar before it (colours follow the previous close). */
+    function mapBar(b, prev) {
+        const up = b.close >= (prev ? prev.close : b.open);
+        switch (chartType) {
+            case 'line': case 'linemarkers': case 'step': case 'area': case 'hlcarea':
+                return { time: b.time, value: b.close };
+            case 'hollow': {
+                const c = up ? UP : DOWN;
+                return { ...b, color: b.close >= b.open ? 'rgba(0,0,0,0)' : c, borderColor: c, wickColor: c };
+            }
+            case 'columns':
+                return { time: b.time, value: b.close, color: up ? UP : DOWN };
+            case 'highlow': {
+                const c = b.close >= b.open ? UP : DOWN;
+                return { time: b.time, open: b.high, high: b.high, low: b.low, close: b.low, color: c, borderColor: c };
+            }
+            default:
+                return b;
+        }
+    }
+
+    function seriesData() {
+        if (!bars.length) return [];
+        switch (chartType) {
+            case 'heikinashi': return heikinAshi(bars);
+            case 'renko': return renko(bars);
+            case 'linebreak': return lineBreak(bars);
+            case 'kagi': return kagi(bars);
+            case 'pnf': return pointFigure(bars);
+            case 'baseline': return bars.map((b) => ({ time: b.time, value: b.close }));
+            case 'volcandles': {
+                // Busier candles are drawn stronger; ranges stand in when there is no volume.
+                const weight = (b) => (b.volume > 0 ? b.volume : b.high - b.low);
+                const max = Math.max(...bars.map(weight)) || 1;
+                return bars.map((b) => {
+                    const col = fade(b.close >= b.open ? UP : DOWN, (0.3 + 0.7 * weight(b) / max).toFixed(2));
+                    return { ...b, color: col, borderColor: col, wickColor: col };
+                });
+            }
+            default: return bars.map((b, i) => mapBar(b, bars[i - 1]));
+        }
+    }
+
+    function refreshExtras() {
+        if (extras.length !== 2) return;
+        extras[0].setData(bars.map((b) => ({ time: b.time, value: b.high })));
+        extras[1].setData(bars.map((b) => ({ time: b.time, value: b.low })));
+    }
+
+    function refreshBaseline() {
+        if (chartType !== 'baseline' || !bars.length || !series) return;
+        const closes = bars.map((b) => b.close);
+        series.applyOptions({ baseValue: { type: 'price', price: (Math.max(...closes) + Math.min(...closes)) / 2 } });
+    }
+
+    function refreshColumnsBase() {
+        if (chartType !== 'columns' || !bars.length || !series) return;
+        series.applyOptions({ base: Math.min(...bars.map((b) => b.low)) });
+    }
+
+    function createSeries() {
+        if (series) chart.removeSeries(series);
+        extras.forEach((e) => chart.removeSeries(e));
+        extras = [];
+        priceLines = [];
+        const common = { priceFormat: priceFormat(), lastValueVisible: true, priceLineVisible: true, priceLineStyle: LWC.LineStyle.Dotted };
+        const quiet = { priceFormat: priceFormat(), lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false };
+        const candles = { ...common, upColor: UP, downColor: DOWN, borderVisible: false, wickUpColor: UP, wickDownColor: DOWN };
+        const lineOpts = { ...common, color: UP, lineWidth: 2 };
+        switch (chartType) {
+            case 'bars': series = chart.addSeries(LWC.BarSeries, { ...common, upColor: UP, downColor: DOWN, thinBars: false }); break;
+            case 'hlcbars': series = chart.addSeries(LWC.BarSeries, { ...common, upColor: UP, downColor: DOWN, thinBars: false, openVisible: false }); break;
+            case 'hollow': case 'volcandles': series = chart.addSeries(LWC.CandlestickSeries, { ...candles, borderVisible: true }); break;
+            case 'highlow': case 'pnf': series = chart.addSeries(LWC.CandlestickSeries, { ...candles, borderVisible: true, wickVisible: false }); break;
+            case 'renko': case 'linebreak': series = chart.addSeries(LWC.CandlestickSeries, { ...candles, wickVisible: false }); break;
+            case 'line': series = chart.addSeries(LWC.LineSeries, lineOpts); break;
+            case 'linemarkers': series = chart.addSeries(LWC.LineSeries, { ...lineOpts, pointMarkersVisible: true, pointMarkersRadius: 2.5 }); break;
+            case 'step': case 'kagi': series = chart.addSeries(LWC.LineSeries, { ...lineOpts, lineType: LWC.LineType.WithSteps }); break;
+            case 'area':
+                series = chart.addSeries(LWC.AreaSeries, {
+                    ...common, lineColor: UP, topColor: 'rgba(22,124,227,0.35)', bottomColor: 'rgba(22,124,227,0.02)', lineWidth: 2,
+                });
+                break;
+            case 'hlcarea':
+                // The high area is tinted down to the bottom, then the low area paints the background back in: the band is left.
+                extras.push(chart.addSeries(LWC.AreaSeries, { ...quiet, lineColor: fade(UP, 0.8), topColor: fade(UP, 0.22), bottomColor: fade(UP, 0.22), lineWidth: 1 }));
+                extras.push(chart.addSeries(LWC.AreaSeries, { ...quiet, lineColor: fade(DOWN, 0.8), topColor: '#121A21', bottomColor: '#121A21', lineWidth: 1 }));
+                series = chart.addSeries(LWC.LineSeries, { ...common, color: '#D4DAE0', lineWidth: 2 });
+                break;
+            case 'baseline':
+                series = chart.addSeries(LWC.BaselineSeries, {
+                    ...common, baseValue: { type: 'price', price: 0 },
+                    topLineColor: UP, topFillColor1: fade(UP, 0.28), topFillColor2: fade(UP, 0.05),
+                    bottomLineColor: DOWN, bottomFillColor1: fade(DOWN, 0.05), bottomFillColor2: fade(DOWN, 0.28), lineWidth: 2,
+                });
+                break;
+            case 'columns': series = chart.addSeries(LWC.HistogramSeries, { ...common, color: UP }); break;
+            default: series = chart.addSeries(LWC.CandlestickSeries, candles);
+        }
+        refreshBaseline();
+        refreshColumnsBase();
+        series.setData(seriesData());
+        refreshExtras();
+        markLines = {};
+        if (typeof applyScaleOptions === 'function' && typeof scaleOpts !== 'undefined') applyScaleOptions();
+        applyLines();
+    }
+
+    function updateLegend(price) {
+        if (price == null) { legend.textContent = ''; return; }
+        legend.textContent = price.toLocaleString('en-US', { minimumFractionDigits: precision, maximumFractionDigits: precision });
+    }
+
+    function average(values, ema, period) {
+        const out = [];
+        if (ema) {
+            const k = 2 / (period + 1);
+            let prev = null;
+            values.forEach((v, i) => {
+                prev = prev == null ? v : v * k + prev * (1 - k);
+                out.push(i >= period - 1 ? prev : null);
+            });
+        } else {
+            let sum = 0;
+            values.forEach((v, i) => {
+                sum += v;
+                if (i >= period) sum -= values[i - period];
+                out.push(i >= period - 1 ? sum / period : null);
+            });
+        }
+        return out;
+    }
+
+    function refreshIndicators() {
+        const closes = bars.map((b) => b.close);
+        Object.keys(INDICATORS).forEach((id) => {
+            const on = indicatorIds.includes(id);
+            if (!on && indicatorSeries[id]) {
+                chart.removeSeries(indicatorSeries[id]);
+                delete indicatorSeries[id];
+            }
+            if (!on) return;
+            const def = INDICATORS[id];
+            if (!indicatorSeries[id]) {
+                indicatorSeries[id] = chart.addSeries(LWC.LineSeries, {
+                    color: def.color, lineWidth: 1, priceLineVisible: false, lastValueVisible: false,
+                    crosshairMarkerVisible: false, priceFormat: priceFormat(),
+                });
+                indicatorOptions(id);
+            }
+            const values = average(closes, def.ema, def.period);
+            indicatorSeries[id].setData(
+                bars.map((b, i) => (values[i] == null ? { time: b.time } : { time: b.time, value: values[i] }))
+            );
+        });
+    }
+
+    function applyLines() {
+        const options = (l) => ({
+            price: l.price, color: l.color, lineWidth: 1, lineStyle: LWC.LineStyle.Dashed,
+            axisLabelVisible: true, title: l.title,
+        });
+        if (lineDefs.length !== priceLines.length) {
+            priceLines.forEach((p) => series.removePriceLine(p));
+            priceLines = lineDefs.map((l) => series.createPriceLine(options(l)));
+        } else {
+            lineDefs.forEach((l, i) => priceLines[i].applyOptions(options(l)));
+        }
+    }
+
+    // Tapping near a position's line opens its panel.
+    chart.subscribeClick((param) => {
+        if (!param.point || !series || !window.Android) return;
+        let best = null;
+        lineDefs.forEach((l) => {
+            if (!l.id) return;
+            const y = series.priceToCoordinate(l.price);
+            if (y != null && Math.abs(y - param.point.y) < 14 && (!best || Math.abs(y - param.point.y) < best.d)) best = { id: l.id, d: Math.abs(y - param.point.y) };
+        });
+        if (best) Android.onPositionTap(best.id);
+    });
+
+    chart.subscribeCrosshairMove((param) => {
+        const data = param.seriesData && series ? param.seriesData.get(series) : null;
+        if (data) updateLegend(data.close != null ? data.close : data.value);
+        else updateLegend(bars.length ? bars[bars.length - 1].close : null);
+    });
+
+    createSeries();
+
+    // Called from Kotlin ------------------------------------------------------
+
+    window.setPrecision = (digits) => {
+        precision = digits;
+        series.applyOptions({ priceFormat: priceFormat() });
+    };
+
+    window.setData = (data, scrollToEnd) => {
+        bars = data;
+        refreshBaseline();
+        refreshColumnsBase();
+        series.setData(seriesData());
+        refreshExtras();
+        refreshIndicators();
+        updateLegend(bars.length ? bars[bars.length - 1].close : null);
+        if (scrollToEnd) chart.timeScale().scrollToRealTime();
+    };
+
+    window.updateBar = (bar) => {
+        if (bars.length && bars[bars.length - 1].time === bar.time) bars[bars.length - 1] = bar;
+        else bars.push(bar);
+        if (REBUILT.includes(chartType)) series.setData(seriesData());
+        else series.update(mapBar(bar, bars[bars.length - 2]));
+        if (extras.length) {
+            extras[0].update({ time: bar.time, value: bar.high });
+            extras[1].update({ time: bar.time, value: bar.low });
+        }
+        if (indicatorIds.length) refreshIndicators();
+        updateLegend(bar.close);
+    };
+
+    window.setLines = (lines) => {
+        lineDefs = lines;
+        applyLines();
+    };
+
+    window.setChartType = (type) => {
+        chartType = type;
+        createSeries();
+    };
+
+    window.setIndicators = (ids) => {
+        indicatorIds = ids;
+        refreshIndicators();
+    };
+
+    var scaleMode = 'normal';
+    var autoScaleOn = true;
+    const side = () => (scaleOpts.left ? 'left' : 'right');
+
+    function applyScaleMode() {
+        const m = scaleMode === 'log' ? LWC.PriceScaleMode.Logarithmic
+            : scaleMode === 'percent' ? LWC.PriceScaleMode.Percentage
+            : scaleMode === 'indexed' ? LWC.PriceScaleMode.IndexedTo100 : LWC.PriceScaleMode.Normal;
+        chart.priceScale(side()).applyOptions({ mode: m, autoScale: autoScaleOn });
+    }
+
+    /** mode: 'normal' | 'log' | 'percent' | 'indexed' */
+    window.setScale = (mode, auto) => {
+        scaleMode = mode;
+        autoScaleOn = auto;
+        applyScaleMode();
+    };
+
+    // ---- price scale options, labels and lines ------------------------------------------------
+
+    var scaleOpts = { invert: false, left: false, priceOnly: false, labels: ['last', 'indvalues', 'countdown', 'nooverlap'], lines: ['last'], plus: false };
+    var symbolName = '';
+    var barSeconds = 3600;
+    var tzOffset = 0;
+    var marks = { prev: null, bid: null, ask: null };
+    var markLines = {};
+    const hasLabel = (k) => scaleOpts.labels.includes(k);
+    const hasLine = (k) => scaleOpts.lines.includes(k);
+    const NAMES = { ma20: 'MA 20', ma50: 'MA 50', ema20: 'EMA 20' };
+
+    function indicatorOptions(id) {
+        indicatorSeries[id].applyOptions({
+            priceScaleId: side(),
+            lastValueVisible: hasLabel('indvalues'),
+            title: hasLabel('indnames') ? NAMES[id] : '',
+            autoscaleInfoProvider: scaleOpts.priceOnly ? () => null : undefined,
+        });
+    }
+
+    function applyScaleOptions() {
+        if (!series) return;
+        chart.applyOptions({
+            leftPriceScale: { visible: scaleOpts.left, borderColor: '#3A444D', scaleMargins: { top: 0.08, bottom: 0.08 } },
+            rightPriceScale: { visible: !scaleOpts.left },
+        });
+        ['left', 'right'].forEach((id) => chart.priceScale(id).applyOptions({ invertScale: scaleOpts.invert, alignLabels: hasLabel('nooverlap') }));
+        [series, ...extras].forEach((x) => x.applyOptions({ priceScaleId: side() }));
+        series.applyOptions({ lastValueVisible: hasLabel('last'), priceLineVisible: hasLine('last'), title: hasLabel('name') ? symbolName : '' });
+        Object.keys(indicatorSeries).forEach(indicatorOptions);
+        applyScaleMode();
+        refreshMarks();
+        refreshCountdown();
+    }
+
+    /** Previous close, visible high/low and bid/ask, each with an optional scale label and line. */
+    function refreshMarks() {
+        if (!series) return;
+        const want = {};
+        const add = (key, group, price, color) => {
+            const label = hasLabel(group), line = hasLine(group);
+            if (price != null && isFinite(price) && (label || line)) want[key] = { price, color, label, line };
+        };
+        add('prev', 'prev', marks.prev, '#9598A1');
+        if (bars.length && (hasLabel('hl') || hasLine('hl'))) {
+            const r = chart.timeScale().getVisibleLogicalRange();
+            const from = r ? Math.max(0, Math.floor(r.from)) : 0;
+            const to = r ? Math.min(bars.length - 1, Math.ceil(r.to)) : bars.length - 1;
+            const shown = bars.slice(from, to + 1);
+            if (shown.length) {
+                add('high', 'hl', Math.max(...shown.map((b) => b.high)), '#9598A1');
+                add('low', 'hl', Math.min(...shown.map((b) => b.low)), '#9598A1');
+            }
+        }
+        add('bid', 'bidask', marks.bid, DOWN);
+        add('ask', 'bidask', marks.ask, UP);
+        Object.keys(markLines).forEach((k) => {
+            if (!want[k]) { series.removePriceLine(markLines[k]); delete markLines[k]; }
+        });
+        Object.keys(want).forEach((k) => {
+            const w = want[k];
+            const options = {
+                price: w.price, color: w.color, lineWidth: 1, lineStyle: LWC.LineStyle.Dashed,
+                lineVisible: w.line, axisLabelVisible: w.label, title: '',
+            };
+            if (markLines[k]) markLines[k].applyOptions(options);
+            else markLines[k] = series.createPriceLine(options);
+        });
+    }
+
+    // Time left in the current candle, shown under the last price label.
+    const countdown = document.createElement('div');
+    Object.assign(countdown.style, {
+        position: 'fixed', zIndex: '4', display: 'none', color: '#fff', fontSize: '11px',
+        textAlign: 'center', lineHeight: '15px', pointerEvents: 'none',
+    });
+    document.body.appendChild(countdown);
+
+    function refreshCountdown() {
+        const y = bars.length && series ? series.priceToCoordinate(bars[bars.length - 1].close) : null;
+        if (!hasLabel('countdown') || !hasLabel('last') || y == null || barSeconds <= 0) { countdown.style.display = 'none'; return; }
+        const last = bars[bars.length - 1];
+        let left = Math.max(0, Math.round(last.time + barSeconds - (Date.now() / 1000 + tzOffset)));
+        const pad = (n) => String(n).padStart(2, '0');
+        const d = Math.floor(left / 86400), h = Math.floor((left % 86400) / 3600), m = Math.floor((left % 3600) / 60), sec = left % 60;
+        countdown.textContent = d ? d + 'd ' + h + 'h' : h ? pad(h) + ':' + pad(m) + ':' + pad(sec) : pad(m) + ':' + pad(sec);
+        const w = chart.priceScale(side()).width();
+        const up = chartType === 'line' || chartType === 'area' || last.close >= last.open;
+        Object.assign(countdown.style, {
+            display: 'block', width: w + 'px', top: (y + 9) + 'px',
+            left: (scaleOpts.left ? 0 : window.innerWidth - w) + 'px', background: up ? UP : DOWN,
+        });
+    }
+    setInterval(refreshCountdown, 250);
+
+    // "+" next to the crosshair price, like the broker chart; tapping it creates an alert there.
+    const plus = document.createElement('div');
+    plus.textContent = '+';
+    Object.assign(plus.style, {
+        position: 'fixed', zIndex: '6', display: 'none', width: '20px', height: '20px', borderRadius: '10px',
+        background: '#2A323A', color: '#fff', fontSize: '16px', lineHeight: '19px', textAlign: 'center',
+    });
+    document.body.appendChild(plus);
+    chart.subscribeCrosshairMove((param) => {
+        if (!scaleOpts.plus || !param.point || !series) { plus.style.display = 'none'; return; }
+        const w = chart.priceScale(side()).width();
+        plus.dataset.price = series.coordinateToPrice(param.point.y);
+        Object.assign(plus.style, {
+            display: 'block', top: (param.point.y - 10) + 'px',
+            left: (scaleOpts.left ? w + 4 : window.innerWidth - w - 24) + 'px',
+        });
+    });
+    plus.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const price = parseFloat(plus.dataset.price);
+        if (window.Android && isFinite(price)) Android.onPlusTap(price);
+    });
+
+    // A tap on the price scale opens the scale menu.
+    document.addEventListener('click', (e) => {
+        if (!window.Android || e.target === plus) return;
+        const w = chart.priceScale(side()).width();
+        const onScale = scaleOpts.left ? e.clientX < w : e.clientX > window.innerWidth - w;
+        if (onScale && e.clientY < window.innerHeight - chart.timeScale().height()) Android.onScaleTap();
+    });
+
+    chart.timeScale().subscribeVisibleLogicalRangeChange(() => refreshMarks());
+
+    window.setScaleOptions = (o) => {
+        scaleOpts = o;
+        applyScaleOptions();
+    };
+
+    window.setBarInfo = (name, seconds, offset) => {
+        symbolName = name;
+        barSeconds = seconds;
+        tzOffset = offset;
+        if (series) series.applyOptions({ title: hasLabel('name') ? symbolName : '' });
+    };
+
+    window.setMarks = (prev, bid, ask) => {
+        marks = { prev, bid, ask };
+        refreshMarks();
+    };
+
+    window.setGrid = (visible) => {
+        const color = visible ? '#1A222B' : 'rgba(0,0,0,0)';
+        chart.applyOptions({ grid: { vertLines: { color }, horzLines: { color } } });
+    };
+
+    /** Shows the last [seconds] of data, or everything when seconds is 0. */
+    window.setRange = (seconds) => {
+        if (!bars.length) return;
+        if (!seconds) { chart.timeScale().fitContent(); return; }
+        const to = bars[bars.length - 1].time;
+        chart.timeScale().setVisibleRange({ from: to - seconds, to: to });
+    };
+</script>
+<script src="drawings.js"></script>
+</body>
+</html>

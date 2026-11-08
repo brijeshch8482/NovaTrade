@@ -470,7 +470,8 @@ private fun Fund(label: String, value: String) {
 /** Moves virtual money between two of the user's accounts. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TransferSheet(accounts: List<Account>, fromNumber: Long, engine: TradingEngine, onResult: (OrderResult) -> Unit, onDismiss: () -> Unit) {
+fun TransferSheet(allAccounts: List<Account>, fromNumber: Long, engine: TradingEngine, onResult: (OrderResult) -> Unit, onDismiss: () -> Unit) {
+    val accounts = allAccounts.filter { !it.archived }
     var from by remember { mutableStateOf(fromNumber) }
     var to by remember { mutableStateOf(accounts.firstOrNull { it.number != fromNumber }?.number) }
     var amount by remember { mutableStateOf("") }

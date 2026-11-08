@@ -271,6 +271,8 @@ data class Account(
     /** Optional custom name shown instead of the account kind. */
     val nickname: String = "",
     val platform: String = Brand.name,
+    /** Hidden from the account lists until restored; its history is kept. */
+    val archived: Boolean = false,
 ) {
     /** Header shown on account cards, e.g. "RAJU" or "STANDARD". */
     val title: String get() = nickname.ifBlank { kind }.uppercase()

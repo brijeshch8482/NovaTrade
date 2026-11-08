@@ -47,6 +47,7 @@ class AccountStore(private val file: File) {
         .put("kind", kind)
         .put("nickname", nickname)
         .put("platform", platform)
+        .put("archived", archived)
         .put("balance", balance)
         .put("leverage", leverage)
         .put("nextId", nextId)
@@ -61,6 +62,7 @@ class AccountStore(private val file: File) {
         kind = optString("kind", "Standard"),
         nickname = optString("nickname", ""),
         platform = optString("platform", com.novatrade.demo.Brand.name),
+        archived = optBoolean("archived"),
         balance = getDouble("balance"),
         leverage = getInt("leverage"),
         positions = getJSONArray("positions").map { it.toPosition() },

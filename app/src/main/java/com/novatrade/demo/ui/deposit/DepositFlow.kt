@@ -31,8 +31,6 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
-import androidx.compose.material.icons.outlined.ArrowCircleDown
-import androidx.compose.material.icons.outlined.ArrowOutward
 import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material.icons.outlined.SwapVert
@@ -377,8 +375,8 @@ private fun CoinCard(m: CryptoMethod, onDeposit: () -> Unit, onWithdraw: () -> U
         Text("≈ 0.00 USD", fontSize = 13.sp, color = AppColors.TextSecondary)
         Spacer(Modifier.height(14.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-            WalletAction("Deposit", Icons.Outlined.ArrowCircleDown, primary = true, onClick = onDeposit)
-            WalletAction("Withdrawal", Icons.Outlined.ArrowOutward, onClick = onWithdraw)
+            WalletAction("Deposit", com.novatrade.demo.ui.common.DepositCircle, primary = true, onClick = onDeposit)
+            WalletAction("Withdrawal", com.novatrade.demo.ui.common.WithdrawCircle, onClick = onWithdraw)
             WalletAction("Transfer", Icons.Outlined.SwapHoriz) { onMessage("No ${m.code} in the crypto wallet to transfer") }
         }
     }
@@ -417,7 +415,7 @@ private fun DepositPage(
     var methodMenu by remember { mutableStateOf(false) }
     var accountMenu by remember { mutableStateOf(false) }
     // Real accounts first; default to the selected one.
-    val targets = accounts.sortedBy { it.type != AccountType.REAL }
+    val targets = accounts.filter { !it.archived }.sortedBy { it.type != AccountType.REAL }
     var target by remember { mutableLongStateOf(activeNumber) }
     var showVirtual by remember { mutableStateOf(false) }
     val account = targets.firstOrNull { it.number == target } ?: targets.first()

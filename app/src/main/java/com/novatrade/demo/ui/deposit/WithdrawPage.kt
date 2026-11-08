@@ -80,7 +80,7 @@ internal fun WithdrawPage(
 ) {
     var methodMenu by remember { mutableStateOf(false) }
     var accountMenu by remember { mutableStateOf(false) }
-    val sources = accounts.sortedBy { it.type != AccountType.REAL }
+    val sources = accounts.filter { !it.archived }.sortedBy { it.type != AccountType.REAL }
     var source by remember { mutableLongStateOf(activeNumber) }
     val account = sources.firstOrNull { it.number == source } ?: sources.first()
     val available = freeMarginOf(account).coerceAtLeast(0.0)

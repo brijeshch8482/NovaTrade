@@ -102,6 +102,20 @@ class TradingEngine(
 
     fun rename(number: Long, nickname: String) = edit(number) { it.copy(nickname = nickname.trim()) }
 
+    /** Hides an account from the lists. Only an unselected account with nothing open can be archived. */
+    fun archive(number: Long): OrderResult {
+        val acc = accountOf(number)
+        if (number == activeNumber) return OrderResult.Error("Switch to another account before archiving this one")
+        if (acc.positions.isNotEmpty() || acc.pending.isNotEmpty()) return OrderResult.Error("Close the account's positions and orders first")
+        edit(number) { it.copy(archived = true) }
+        return OrderResult.Success("Account #$number was archived").also(::logResult)
+    }
+
+    fun restore(number: Long): OrderResult {
+        edit(number) { it.copy(archived = false) }
+        return OrderResult.Success("Trading account #$number has been successfully reactivated.").also(::logResult)
+    }
+
     /** Moves virtual funds between two of the user's accounts. */
     fun transfer(from: Long, to: Long, amount: Double): OrderResult {
         if (from == to) return OrderResult.Error("Choose two different accounts")

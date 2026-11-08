@@ -30,8 +30,6 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.outlined.Alarm
-import androidx.compose.material.icons.outlined.ArrowCircleDown
-import androidx.compose.material.icons.outlined.ArrowOutward
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -316,8 +314,8 @@ private fun AccountCard(
         Spacer(Modifier.height(14.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
             ActionButton("Trade", Icons.Outlined.CandlestickChart, primary = true, onClick = onTrade)
-            ActionButton("Deposit", Icons.Outlined.ArrowCircleDown) { onAction(Sheet.DEPOSIT) }
-            ActionButton("Withdraw", Icons.Outlined.ArrowOutward) { onAction(Sheet.WITHDRAW) }
+            ActionButton("Deposit", com.novatrade.demo.ui.common.DepositCircle) { onAction(Sheet.DEPOSIT) }
+            ActionButton("Withdraw", com.novatrade.demo.ui.common.WithdrawCircle) { onAction(Sheet.WITHDRAW) }
             ActionButton("Details", Icons.Filled.MoreVert) { onAction(Sheet.DETAILS) }
         }
     }

@@ -83,6 +83,31 @@ The app is designed to feel like a professional mobile broker: dark theme, accou
 | **Performance** | **Profile** | |
 | <img src="docs/screenshots/performance.png" width="250" /> | <img src="docs/screenshots/profile.png" width="250" /> | |
 
+## Using the chart
+
+### Drawing tools
+
+The left toolbar (tap the small arrow at the bottom-left of the chart) holds the cursor and six groups of drawing tools. Tap a group to see its tools, pick one, then tap the chart to place each anchor point. Drag an anchor to move it; tap a drawing to select it and get a toolbar for colour, line width, style, copy and delete. Star a tool to keep it in the favourites bar.
+
+| Left toolbar | Lines and channels | Fibonacci |
+| :---: | :---: | :---: |
+| <img src="docs/screenshots/chart_toolbar.png" width="250" /> | <img src="docs/screenshots/tools_lines.png" width="250" /> | <img src="docs/screenshots/tools_fibonacci.png" width="250" /> |
+| **Patterns and Elliott waves** | **Prediction and measurement** | **Brushes, arrows and shapes** |
+| <img src="docs/screenshots/tools_patterns.png" width="250" /> | <img src="docs/screenshots/tools_prediction.png" width="250" /> | <img src="docs/screenshots/tools_shapes.png" width="250" /> |
+| **Text and notes** | **Open position with TP / SL on the chart** | |
+| <img src="docs/screenshots/tools_text.png" width="250" /> | <img src="docs/screenshots/chart_position.png" width="250" /> | |
+
+Tips:
+
+- **Long / Short Position:** tap three times for entry, target and stop. Tap elsewhere to hide the labels and keep only the zones; tap a zone to bring the labels and handles back.
+- **Measure:** the ruler button (Date and Price Range) shows the price change, percentage, number of bars and time between two points.
+- **Magnet:** snaps anchors to candle open, high, low and close.
+- **Back** closes an open menu or cancels the tool being placed before it leaves the chart.
+
+### Positions on the chart
+
+An open position is drawn at its entry price with its volume, live P/L and a close button. Its Take Profit and Stop Loss are shown as separate lines: drag one to move it, or drag from the TP / SL tags to add one. Edits show a Cancel / Confirm bar and validation errors (for example, a take profit below the current price on a buy) until they are confirmed.
+
 ## Tech stack
 
 | Area | Technology |

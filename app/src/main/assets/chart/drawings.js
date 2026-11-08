@@ -836,14 +836,23 @@
         };
         box(ye, yt, long ? '#089981' : '#F23645');
         box(ye, ys, long ? '#F23645' : '#089981');
+        // Like the broker chart: only the two zones show until the drawing is tapped; then the
+        // entry line, the target/stop labels and the result label appear with its handles.
+        if (d.id !== selectedId) return;
         ctx.strokeStyle = '#787B86';
         S(hline(ye, x0, x1));
         ctx.strokeStyle = d.color;
         const rr = Math.abs((target - entry) / ((entry - stop) || 1));
         const pct = (v) => (((v - entry) / entry) * 100).toFixed(2) + '%';
-        text('Target: ' + fmt(target) + ' (' + pct(target) + ')', (x0 + x1) / 2, yt, { align: 'center', base: long ? 'bottom' : 'top', bg: '#089981', size: 11 });
-        text('Stop: ' + fmt(stop) + ' (' + pct(stop) + ')', (x0 + x1) / 2, ys, { align: 'center', base: long ? 'top' : 'bottom', bg: '#F23645', size: 11 });
-        text('Risk/Reward: ' + rr.toFixed(2), (x0 + x1) / 2, ye, { align: 'center', base: 'middle', bg: '#2A2E39', size: 11 });
+        const dist = (v) => fmt(Math.abs(v - entry)) + ' (' + pct(v).replace('-', '') + ')';
+        // Result at the latest price, as if the trade were closed now.
+        const last = bars.length ? bars[bars.length - 1].close : entry;
+        const pnl = (last - entry) * (long ? 1 : -1);
+        const mid = (x0 + x1) / 2;
+        text('Target: ' + dist(target), mid, yt, { align: 'center', base: long ? 'bottom' : 'top', bg: '#089981', size: 11 });
+        text('Stop: ' + dist(stop), mid, ys, { align: 'center', base: long ? 'top' : 'bottom', bg: '#F23645', size: 11 });
+        text('Closed P&L: ' + (pnl >= 0 ? '' : '-') + fmt(Math.abs(pnl)) + ', Risk/Reward Ratio: ' + rr.toFixed(2), mid, ye,
+            { align: 'center', base: 'middle', bg: pnl >= 0 ? '#089981' : '#F23645', size: 11 });
     }
 
     function measure(P, d, price, date) {

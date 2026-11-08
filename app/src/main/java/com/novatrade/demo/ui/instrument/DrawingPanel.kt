@@ -161,7 +161,7 @@ fun DrawingPanel(
         PanelButton(activeTool == "cursor", onClick = onCursor) { tint -> ToolGlyph(Glyph.CROSS, tint) }
         favorites.mapNotNull(ToolCatalog::find).forEach { f ->
             PanelButton(activeTool == f.id, onClick = { onTool(f.id) }) { tint ->
-                Icon(f.icon, f.name, tint = tint, modifier = Modifier.size(18.dp))
+                ToolIcon(f.id, tint, size = 18)
             }
         }
         if (favorites.isNotEmpty()) HorizontalDivider(color = AppColors.Divider, modifier = Modifier.width(24.dp).padding(vertical = 2.dp))
@@ -308,7 +308,7 @@ fun ToolListOverlay(
                             .padding(start = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(tool.icon, contentDescription = null, modifier = Modifier.size(20.dp))
+                        ToolIcon(tool.id, AppColors.TextPrimary, size = 22)
                         Spacer(Modifier.width(12.dp))
                         Text(tool.name, fontSize = 15.sp, modifier = Modifier.weight(1f))
                         val fav = tool.id in favorites
